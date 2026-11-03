@@ -269,7 +269,7 @@ local function setFly(on)
             hum.WalkSpeed = 0; hum.JumpPower = 0
         end
         if cam then S._flyCamSubj = cam.CameraSubject end
-        DeaDx:Notify({ Title = "Fly Ball", Content = "Ligado — câmera na bola, WASD pilota. Espaço/Ctrl sobe/desce.", Type = "Success" })
+        DeaDx:Notify({ Title = "Fly Ball", Content = "Enabled. The camera follows the ball. WASD to steer, Space/Ctrl to move up/down.", Type = "Success" })
     else
         if hum then hum.WalkSpeed = S._flyWS or 16; hum.JumpPower = S._flyJP or 50 end
         if S._flyBV then pcall(function() S._flyBV:Destroy() end); S._flyBV = nil end
@@ -295,7 +295,7 @@ local function setFling(on)
     local ball = getBall()
     if not ball then
         S.fling = false
-        DeaDx:Notify({ Title = "Fling Ball", Content = "Não achei a bola.", Type = "Warning" })
+        DeaDx:Notify({ Title = "Fling Ball", Content = "Ball not found.", Type = "Warning" })
         return
     end
 
@@ -303,7 +303,7 @@ local function setFling(on)
         local _, hrp = getChar()
         if hrp and (hrp.Position - ball.Position).Magnitude <= 12 then grabBall(ball) end
     end
-    DeaDx:Notify({ Title = "Fling Ball", Content = "Ligado — PRECISA de posse. Encosta a bola nos inimigos. ⚠ Risco de ban.", Type = "Warning" })
+    DeaDx:Notify({ Title = "Fling Ball", Content = "Enabled. You MUST have possession. Touch opponents with the ball. ⚠ Ban risk.", Type = "Warning" })
     task.spawn(function()
         local b0 = getBall()
         if b0 then S._flingProps = b0.CustomPhysicalProperties end
@@ -343,7 +343,7 @@ local function killAnticheat()
     local canUp = dbg and type(dbg.getupvalues) == "function" and type(dbg.setupvalue) == "function"
     local canInf = dbg and type(dbg.getinfo) == "function"
     if not (hasGC and canUp and canInf) then
-        return false, "executor sem getgc/debug.setupvalue"
+        return false, "executor does not support getgc/debug.setupvalue"
     end
     local stub = (type(newcclosure) == "function") and newcclosure(function() return false end) or function() return false end
     for _, f in ipairs(getgc(true)) do
@@ -437,7 +437,7 @@ local function onStep(dt)
                 if S._flyBV then pcall(function() S._flyBV.Velocity = Vector3.zero end) end
                 if not S._flyLost then
                     S._flyLost = true
-                    DeaDx:Notify({ Title = "Fly Ball", Content = "Sem posse da bola — chegue perto/pegue ela primeiro. O servidor não deixa roubar de longe.", Type = "Warning" })
+                    DeaDx:Notify({ Title = "Fly Ball", Content = "You do not have possession. Move closer and grab the ball first. The server blocks steals from a distance.", Type = "Warning" })
                 end
             end
             return
@@ -525,7 +525,7 @@ end
 
 local Window = DeaDx:CreateWindow({
     Title = "Dead's Hub",
-    SubTitle = "Futebol Clássico",
+    SubTitle = "Classic Football",
     Icon = "goal",
     Size = UDim2.fromOffset(600, 460),
     Theme = "DeaDx",
@@ -536,231 +536,231 @@ local Window = DeaDx:CreateWindow({
     MinimizeKey = Enum.KeyCode.RightControl,
 })
 
-local TBola = Window:AddTab({ Title = "Bola", Icon = "dribbble" })
+local TBola = Window:AddTab({ Title = "Ball", Icon = "dribbble" })
 
 local sAuto = TBola:AddSection({ Title = "Auto Ball", Icon = "move" })
 sAuto:AddToggle("autoball", {
     Title = "Auto Ball",
-    Description = "Anda até a bola (velocidade normal)",
+    Description = "Walks to the ball at normal speed",
     Default = false,
     Callback = function(v) setAutoBall(v) end,
 })
 sAuto:AddSegmented("autoballmode", {
-    Title = "Modo",
+    Title = "Mode",
     Values = { "Legit", "Blatant" },
     Default = "Legit",
     Icons = { Legit = "shield", Blatant = "flame" },
     Callback = function(v) S.autoBallMode = v end,
 })
 sAuto:AddSlider("chaselimit", {
-    Title = "Limite de perseguição",
+    Title = "Chase Limit",
     Min = 20, Max = 600, Default = 150, Increment = 10, Suffix = " st",
     Callback = function(v) S.chaseLimit = v end,
 })
 sAuto:AddSlider("stopdist", {
-    Title = "Parar a",
+    Title = "Stop Distance",
     Min = 3, Max = 20, Default = 5, Increment = 1, Suffix = " st",
     Callback = function(v) S.stopDist = v end,
 })
 sAuto:AddParagraph({
-    Title = "Modos",
-    Content = "<b>Legit</b>: só anda. <b>Blatant</b>: anda + pega posse perto. Não bane.",
+    Title = "Modes",
+    Content = "<b>Legit</b>: walks only. <b>Blatant</b>: walks and takes possession nearby. Does not get you banned.",
 })
 
 local sFly = TBola:AddSection({ Title = "Fly Ball", Icon = "plane" })
 sFly:AddToggle("flyball", {
     Title = "Fly Ball",
-    Description = "Pilota a bola pela câmera (precisa de posse)",
+    Description = "Steer the ball using the camera (requires possession)",
     Default = false,
     Callback = function(v) setFly(v) end,
 })
 sFly:AddSlider("flyspeed", {
-    Title = "Velocidade do voo",
+    Title = "Flight Speed",
     Min = 20, Max = 400, Default = 120, Increment = 10, Suffix = "",
     Callback = function(v) S.flySpeed = v end,
 })
 sFly:AddKeybind("flykey", {
-    Title = "Tecla Fly Ball",
+    Title = "Fly Ball Key",
     Default = Enum.KeyCode.K,
     Mode = "Toggle",
     Callback = function() setFly(not S.flyBall) end,
 })
 sFly:AddParagraph({
-    Title = "Controles",
-    Content = "<b>WASD</b> pela câmera • <b>Espaço/Ctrl</b> sobe/desce • precisa de posse.",
+    Title = "Controls",
+    Content = "<b>WASD</b> to steer using the camera • <b>Space/Ctrl</b> to move up/down • requires possession.",
 })
 
 local sGet = TBola:AddSection({ Title = "Get Ball", Icon = "hand" })
 sGet:AddButton({
     Title = "Get Ball",
-    Description = "Traz a bola pra você",
+    Description = "Brings the ball to you",
     Callback = function() getBallNow() end,
 })
 sGet:AddKeybind("getballkey", {
-    Title = "Tecla Get Ball",
-    Description = "Traz a bola pra você",
+    Title = "Get Ball Key",
+    Description = "Brings the ball to you",
     Default = Enum.KeyCode.G,
     Mode = "Toggle",
     Callback = function() getBallNow() end,
 })
 sGet:AddToggle("autoget", {
     Title = "Auto Get",
-    Description = "Pega a bola sozinho quando chega perto",
+    Description = "Automatically grabs the ball when nearby",
     Default = false,
     Callback = function(v) S.autoGet = v end,
 })
 sGet:AddSlider("reach", {
-    Title = "Alcance",
+    Title = "Range",
     Min = 6, Max = 60, Default = 12, Increment = 1, Suffix = " st",
     Callback = function(v) S.reachStud = v end,
 })
 sGet:AddButton({
-    Title = "Dropar bola",
-    Description = "Solta a bola",
+    Title = "Drop Ball",
+    Description = "Releases the ball",
     Cooldown = 1,
     Callback = function() pcall(function() R.DropBall:FireServer() end) end,
 })
 
-local sTp = TBola:AddSection({ Title = "Pegar por TP", Icon = "zap" })
+local sTp = TBola:AddSection({ Title = "TP Grab", Icon = "zap" })
 sTp:AddButton({
-    Title = "Pegar bola (TP)",
-    Description = "Pega a bola de longe num instante",
+    Title = "Grab Ball (TP)",
+    Description = "Quickly grabs the ball from a distance",
     Callback = function() tpGrab() end,
 })
 sTp:AddKeybind("tpkey", {
-    Title = "Tecla",
-    Description = "Pega a bola de longe",
+    Title = "Keybind",
+    Description = "Grabs the ball from a distance",
     Default = Enum.KeyCode.J,
     Mode = "Toggle",
     Callback = function() tpGrab() end,
 })
 sTp:AddToggle("tpauto", {
     Title = "Auto",
-    Description = "Fica pegando a bola sozinho",
+    Description = "Keeps grabbing the ball automatically",
     Default = false,
     Callback = function(v) S.tpGrabAuto = v end,
 })
 sTp:AddSlider("tphold", {
-    Title = "Velocidade",
+    Title = "Speed",
     Min = 3, Max = 20, Default = 6, Increment = 1, Suffix = "",
     Callback = function(v) S.tpHold = v / 100 end,
 })
 sTp:AddParagraph({
-    Title = "⚠ Risco de ban",
-    Content = "Pega a bola de qualquer distância. Mais arriscado — use com cuidado.",
+    Title = "⚠ Ban Risk",
+    Content = "Grabs the ball from any distance. Higher risk. Use with caution.",
 })
 
-local TGK = Window:AddTab({ Title = "Goleiro", Icon = "shield-half" })
+local TGK = Window:AddTab({ Title = "Goalkeeper", Icon = "shield-half" })
 
 local sCatch = TGK:AddSection({ Title = "Auto Catch", Icon = "hand-metal" })
 sCatch:AddToggle("autocatch", {
     Title = "Auto Catch",
-    Description = "Defende a bola sozinho (só como goleiro)",
+    Description = "Automatically makes saves (goalkeeper only)",
     Default = false,
     Callback = function(v) S.autoCatch = v end,
 })
 sCatch:AddSegmented("catchmode", {
-    Title = "Modo",
+    Title = "Mode",
     Values = { "Legit", "Blatant" },
     Default = "Legit",
     Icons = { Legit = "shield", Blatant = "flame" },
     Callback = function(v) S.catchMode = v end,
 })
 sCatch:AddSlider("gkreach", {
-    Title = "Alcance",
+    Title = "Range",
     Min = 8, Max = 50, Default = 16, Increment = 1, Suffix = " st",
     Callback = function(v) S.gkReach = v end,
 })
 sCatch:AddButton({
-    Title = "Defender agora",
+    Title = "Save Now",
     Callback = function() if isGK() then gkCatch(getBall()) else
-        DeaDx:Notify({ Title = "GK", Content = "Você não é o goleiro.", Type = "Warning" }) end end,
+        DeaDx:Notify({ Title = "GK", Content = "You are not the goalkeeper.", Type = "Warning" }) end end,
 })
 sCatch:AddParagraph({
-    Title = "Modos",
-    Content = "<b>Legit</b>: só quando a bola vem a gol. <b>Blatant</b>: sempre no alcance. Só como goleiro.",
+    Title = "Modes",
+    Content = "<b>Legit</b>: only when the ball is heading toward goal. <b>Blatant</b>: whenever the ball is in range. Goalkeeper only.",
 })
 
 local TBlat = Window:AddTab({ Title = "Blatant", Icon = "flame", IconColor = "#FF2D40" })
 
-local sKick = TBlat:AddSection({ Title = "Poder de Chute", Icon = "zap" })
+local sKick = TBlat:AddSection({ Title = "Kick Power", Icon = "zap" })
 sKick:AddSlider("power", {
-    Title = "Força do chute",
+    Title = "Kick Strength",
     Min = 50, Max = 800, Default = 180, Increment = 10, Suffix = "",
     Callback = function(v) S.kickPower = v end,
 })
 sKick:AddSlider("kickup", {
-    Title = "Altura",
+    Title = "Height",
     Min = 0, Max = 120, Default = 20, Increment = 5, Suffix = "",
     Callback = function(v) S.kickUp = v end,
 })
 sKick:AddKeybind("kickkey", {
-    Title = "Tecla do chute",
-    Description = "Chuta pra onde você olha",
+    Title = "Kick Key",
+    Description = "Kicks in the direction you are looking",
     Default = Enum.KeyCode.F,
     Mode = "Toggle",
     Callback = function() doKick() end,
 })
 sKick:AddButton({
-    Title = "Chutar agora",
+    Title = "Kick Now",
     Callback = function() doKick() end,
 })
 
-local sMore = TBlat:AddSection({ Title = "Mais", Icon = "sparkles" })
+local sMore = TBlat:AddSection({ Title = "More", Icon = "sparkles" })
 sMore:AddToggle("magnet", {
-    Title = "Ímã",
-    Description = "Mantém a bola grudada no seu pé",
+    Title = "Magnet",
+    Description = "Keeps the ball at your feet",
     Default = false,
     Callback = function(v) S.magnet = v end,
 })
 sMore:AddSlider("magnetreach", {
-    Title = "Alcance do ímã",
+    Title = "Magnet Range",
     Min = 6, Max = 40, Default = 10, Increment = 1, Suffix = " st",
     Callback = function(v) S.magnetReach = v end,
 })
 sMore:AddToggle("antisteal", {
     Title = "Anti-Steal",
-    Description = "Ninguém rouba a bola de você",
+    Description = "Stops other players from stealing the ball",
     Default = false,
     Callback = function(v) S.antiSteal = v end,
 })
 sMore:AddSlider("antistealreach", {
-    Title = "Alcance do Anti-Steal",
+    Title = "Anti-Steal Range",
     Min = 6, Max = 40, Default = 14, Increment = 1, Suffix = " st",
     Callback = function(v) S.antiStealReach = v end,
 })
 sMore:AddToggle("fling", {
     Title = "Fling Ball",
-    Description = "Joga longe quem encostar na bola",
+    Description = "Flings anyone who touches the ball",
     Default = false,
     Callback = function(v) setFling(v) end,
 })
 sMore:AddKeybind("flingkey", {
-    Title = "Tecla Fling Ball",
+    Title = "Fling Ball Key",
     Default = Enum.KeyCode.H,
     Mode = "Toggle",
     Callback = function() setFling(not S.fling) end,
 })
 sMore:AddParagraph({
-    Title = "⚠ Risco de ban",
-    Content = "Tudo aqui é mais arriscado. Use em conta descartável.",
+    Title = "⚠ Ban Risk",
+    Content = "Everything here carries a higher risk. Use a throwaway account.",
 })
 
-local TVis = Window:AddTab({ Title = "Visual", Icon = "eye" })
-local sEsp = TVis:AddSection({ Title = "ESP da Bola", Icon = "scan" })
+local TVis = Window:AddTab({ Title = "Visuals", Icon = "eye" })
+local sEsp = TVis:AddSection({ Title = "Ball ESP", Icon = "scan" })
 sEsp:AddToggle("espball", {
     Title = "ESP Ball",
-    Description = "Marca a bola em vermelho com a distância",
+    Description = "Highlights the ball in red and shows its distance",
     Default = false,
     Callback = function(v) S.espBall = v end,
 })
 
-local TCfg = Window:AddTab({ Title = "Config", Icon = "settings" })
+local TCfg = Window:AddTab({ Title = "Settings", Icon = "settings" })
 
 local sAC = TCfg:AddSection({ Title = "Anticheat", Icon = "shield-off" })
 sAC:AddToggle("acoff", {
-    Title = "Tirar Anticheat",
-    Description = "Desliga as travas do jogo no seu lado",
+    Title = "Disable Anticheat",
+    Description = "Disables client-side game restrictions",
     Default = false,
     Callback = function(v)
         S.acOff = v
@@ -768,7 +768,7 @@ sAC:AddToggle("acoff", {
             local okc = killAnticheat()
             DeaDx:Notify({
                 Title = "Anticheat",
-                Content = okc and "Desligado." or "Executor não suporta.",
+                Content = okc and "Disabled." or "Your executor does not support this.",
                 Type = okc and "Success" or "Warning",
             })
         end
@@ -777,12 +777,12 @@ sAC:AddToggle("acoff", {
 
 local sInfo = TCfg:AddSection({ Title = "Hub", Icon = "info" })
 sInfo:AddParagraph({
-    Title = "Teclas",
-    Content = "<b>RightCtrl</b> minimiza • <b>G</b> get • <b>J</b> get por TP • <b>K</b> fly • <b>F</b> chute • <b>H</b> fling",
+    Title = "Keybinds",
+    Content = "<b>RightCtrl</b> minimize • <b>G</b> grab • <b>J</b> TP grab • <b>K</b> fly • <b>F</b> kick • <b>H</b> fling",
 })
 sInfo:AddButton({
-    Title = "Destruir hub",
-    Description = "Desliga tudo e fecha",
+    Title = "Unload Hub",
+    Description = "Disables everything and closes the hub",
     Callback = function() if S.unload then S.unload() end end,
 })
 
@@ -810,7 +810,7 @@ S._conns[#S._conns+1] = LP.CharacterAdded:Connect(function()
 end)
 
 DeaDx:Notify({
-    Title = "Dead's Hub • Futebol Clássico",
-    Content = "Carregado. Tudo começa OFF. RightControl pra minimizar.",
+    Title = "Dead's Hub",
+    Content = "Loaded. All features start OFF. Press RightControl to minimize.",
     Type = "Success",
 })
