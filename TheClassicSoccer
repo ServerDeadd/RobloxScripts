@@ -1,0 +1,816 @@
+local DeaDx = getgenv and getgenv().__DeaDx
+    or loadstring(game:HttpGet("https://raw.githubusercontent.com/ServerDeadd/DeaDx/main/DeaDx.lua"))()
+if getgenv then getgenv().__DeaDx = DeaDx end
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+local Workspace = game:GetService("Workspace")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+if _G.DeadFC and _G.DeadFC.unload then pcall(_G.DeadFC.unload) end
+
+local R = {}
+do
+    local names = {"Client","CatchBall","ChangeOwner","ChangeValue","DropBall","ApplyGKReact","React","ResetWelds","EditLimb"}
+    for _, n in ipairs(names) do R[n] = RS:FindFirstChild(n) or RS:WaitForChild(n, 10) end
+end
+
+local S = {
+    _conns = {},
+
+    autoBall = false,
+    autoBallMode = "Legit",
+    chaseLimit = 150,
+    stopDist = 5,
+    legitSpeed = 16,
+    blatantSpeed = 45,
+    _abWS = nil,
+
+    autoGet = false,
+    reachStud = 12,
+
+    tpGrabAuto = false,
+    tpDrop = 8,
+    tpHold = 0.06,
+    _tpBusy = false,
+
+    autoCatch = false,
+    catchMode = "Legit",
+    gkReach = 16,
+
+    superKick = false,
+    kickPower = 180,
+    kickUp = 20,
+    magnet = false,
+    magnetReach = 10,
+
+    flyBall = false,
+    flySpeed = 120,
+    _flyBV = nil,
+    _flyWS = 16,
+    _flyJP = 50,
+    _flyCamSubj = nil,
+    _flyLost = false,
+
+    antiSteal = false,
+    antiStealReach = 14,
+
+    fling = false,
+    _flingBAV = nil,
+    _flingProps = nil,
+
+    espBall = false,
+    _espHL = nil,
+    _espBB = nil,
+    _ball = nil,
+
+    acOff = false,
+    acPatched = 0,
+
+    _tGrab = 0, _tCatch = 0, _tAnti = 0, _tTp = 0,
+}
+_G.DeadFC = S
+
+local function getChar()
+    local c = LP.Character
+    if not c or not c.Parent then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    local hum = c:FindFirstChildOfClass("Humanoid")
+    if hrp and hum then return c, hrp, hum end
+    return nil
+end
+
+local BALL_SIZE = Vector3.new(2.5, 2.5, 2.5)
+local function scoreBall(d)
+    if not (d and d.Parent) then return -1 end
+    if d.Name ~= "TPS" or not d:IsA("BasePart") or d.Size ~= BALL_SIZE then return -1 end
+    local s = 0
+    local no = d:FindFirstChild("NetworkOwnership")
+    if no and no:IsA("Script") then s += 100 end
+    local sd = d:FindFirstChild("Slowdown")
+    if sd and sd:IsA("Script") then s += 20 end
+    if not d:FindFirstChildWhichIsA("TouchTransmitter") then s += 10 end
+    if d.Parent ~= Workspace then s += 5 end
+    if d.AssemblyLinearVelocity.Magnitude > 1 then s += 5 end
+    local ow = d:FindFirstChild("Owner")
+    if ow and ow:IsA("ObjectValue") and ow.Value then s += 3 end
+    local guid = false
+    for k in pairs(d:GetAttributes()) do if #k == 36 and string.find(k, "-", 1, true) then guid = true break end end
+    if not guid then s += 5 end
+    if d.Parent == Workspace then s -= 40 end
+    return s
+end
+
+local _ballCache, _tBallScan = nil, 0
+local function getBall()
+    local now = tick()
+    local cacheOK = _ballCache and scoreBall(_ballCache) >= 100
+    if cacheOK and (now - _tBallScan) < 1 then return _ballCache end
+    _tBallScan = now
+    local best, bestS = nil, 0
+    for _, d in ipairs(Workspace:GetDescendants()) do
+        if d.Name == "TPS" then
+            local sc = scoreBall(d)
+            if sc > bestS then best, bestS = d, sc end
+        end
+    end
+    if best and bestS > 0 then
+        _ballCache = best
+    elseif not cacheOK then
+        _ballCache = nil
+    end
+    return _ballCache
+end
+
+local function isGK()
+    local c = LP.Character
+    if not c then return false end
+    if c:FindFirstChild("ValueGKMPS") then return true end
+    local t = LP.Team
+    return t and (t.Name == "-Home GK" or t.Name == "-Away GK") or false
+end
+
+local function ownerOf(ball)
+    local o = ball:FindFirstChild("Owner")
+    return o and o.Value or nil
+end
+
+local function pushBall(ball, velocity, life)
+    for _, ch in ipairs(ball:GetChildren()) do
+        if ch:IsA("BodyVelocity") and ch.Name == LP.Name then ch:Destroy() end
+    end
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = LP.Name
+    bv.Velocity = velocity
+    bv.MaxForce = Vector3.new(1, 1, 1) * 1e9
+    bv.Parent = ball
+    Debris:AddItem(bv, life or 0.3)
+    return bv
+end
+
+local function grabBall(ball)
+    ball = ball or getBall()
+    if not ball then return end
+    pcall(function() R.ChangeOwner:FireServer(ball, "Tackle") end)
+    pcall(function() R.Client:FireServer("BallSound", ball) end)
+end
+
+local function getBallNow(ball)
+    ball = ball or getBall()
+    if not ball then return end
+    grabBall(ball)
+    local _, hrp = getChar()
+    if hrp then
+        local to = hrp.Position - ball.Position
+        if to.Magnitude > 1 then
+            pushBall(ball, to.Unit * math.min(to.Magnitude * 6, 220), 0.25)
+        end
+    end
+end
+
+local function tpGrab()
+    if S._tpBusy then return end
+    local ball = getBall()
+    local _, hrp = getChar()
+    if not ball or not hrp then return end
+    S._tpBusy = true
+    task.spawn(function()
+        local saved = hrp.CFrame
+        hrp.CFrame = CFrame.new(ball.Position - Vector3.new(0, S.tpDrop, 0))
+        task.wait(S.tpHold)
+        grabBall(getBall() or ball)
+        task.wait(0.03)
+        if hrp and hrp.Parent then hrp.CFrame = saved end
+        local b = getBall()
+        if b and hrp and hrp.Parent then
+            local to = hrp.Position - b.Position
+            if to.Magnitude > 1 then pushBall(b, to.Unit * math.min(to.Magnitude * 8, 300), 0.3) end
+        end
+        S._tpBusy = false
+    end)
+end
+
+local function gkCatch(ball)
+    ball = ball or getBall()
+    if not ball then return end
+    pcall(function() R.ChangeOwner:FireServer(ball, "Tackle") end)
+    pcall(function() R.Client:FireServer("BallSound", ball) end)
+    pcall(function() R.ApplyGKReact:FireServer(ball, ball.CFrame) end)
+    pcall(function() R.CatchBall:FireServer(ball) end)
+end
+
+local function setAutoBall(on)
+    local _, hrp, hum = getChar()
+    S.autoBall = on
+    if not on and hum and hrp then hum:MoveTo(hrp.Position) end
+end
+
+local function huiParent()
+    local ok, h = pcall(function() return gethui and gethui() end)
+    if ok and h then return h end
+    local ok2, cg = pcall(function() return game:GetService("CoreGui") end)
+    if ok2 and cg then return cg end
+    return LP:FindFirstChildOfClass("PlayerGui")
+end
+
+local function updateESP(ball)
+    if not S.espBall then
+        if S._espHL then S._espHL.Enabled = false end
+        if S._espBB then S._espBB.Enabled = false end
+        return
+    end
+    local hl = S._espHL
+    if not hl or not hl.Parent then
+        hl = Instance.new("Highlight")
+        hl.Name = "DeadFC_BallESP"
+        hl.FillColor = Color3.fromRGB(255, 45, 64)
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = 0.35
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = huiParent()
+        S._espHL = hl
+    end
+    local bb = S._espBB
+    if not bb or not bb.Parent then
+        bb = Instance.new("BillboardGui")
+        bb.Name = "DeadFC_BallBB"
+        bb.Size = UDim2.fromOffset(170, 42)
+        bb.StudsOffsetWorldSpace = Vector3.new(0, 4, 0)
+        bb.AlwaysOnTop = true
+        local lbl = Instance.new("TextLabel")
+        lbl.Name = "L"; lbl.BackgroundTransparency = 1; lbl.Size = UDim2.fromScale(1, 1)
+        lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 13
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255); lbl.TextStrokeTransparency = 0.3
+        lbl.Parent = bb
+        bb.Parent = huiParent()
+        S._espBB = bb
+    end
+    if ball then
+        hl.Adornee = ball; hl.Enabled = true
+        bb.Adornee = ball; bb.Enabled = true
+        local _, hrp = getChar()
+        local d = hrp and math.floor((hrp.Position - ball.Position).Magnitude) or 0
+        bb:FindFirstChild("L").Text = string.format("Ball • %dst", d)
+    else
+        hl.Enabled = false; bb.Enabled = false
+    end
+end
+
+local function setFly(on)
+    local _, _, hum = getChar()
+    local cam = Workspace.CurrentCamera
+    S.flyBall = on
+    if on then
+        grabBall(getBall())
+        if hum then
+            S._flyWS = hum.WalkSpeed; S._flyJP = hum.JumpPower
+            hum.WalkSpeed = 0; hum.JumpPower = 0
+        end
+        if cam then S._flyCamSubj = cam.CameraSubject end
+        DeaDx:Notify({ Title = "Fly Ball", Content = "Ligado — câmera na bola, WASD pilota. Espaço/Ctrl sobe/desce.", Type = "Success" })
+    else
+        if hum then hum.WalkSpeed = S._flyWS or 16; hum.JumpPower = S._flyJP or 50 end
+        if S._flyBV then pcall(function() S._flyBV:Destroy() end); S._flyBV = nil end
+        if cam then cam.CameraSubject = S._flyCamSubj or hum end
+    end
+end
+
+local function flingCleanup(ball)
+    if S._flingBAV then pcall(function() S._flingBAV:Destroy() end); S._flingBAV = nil end
+    ball = ball or getBall()
+    if ball and ball:IsA("BasePart") then
+        pcall(function()
+            if S._flingProps then ball.CustomPhysicalProperties = S._flingProps end
+            ball.Massless = false
+            ball.AssemblyAngularVelocity = Vector3.zero
+        end)
+    end
+end
+
+local function setFling(on)
+    S.fling = on
+    if not on then flingCleanup(getBall()); return end
+    local ball = getBall()
+    if not ball then
+        S.fling = false
+        DeaDx:Notify({ Title = "Fling Ball", Content = "Não achei a bola.", Type = "Warning" })
+        return
+    end
+
+    if ownerOf(ball) ~= LP then
+        local _, hrp = getChar()
+        if hrp and (hrp.Position - ball.Position).Magnitude <= 12 then grabBall(ball) end
+    end
+    DeaDx:Notify({ Title = "Fling Ball", Content = "Ligado — PRECISA de posse. Encosta a bola nos inimigos. ⚠ Risco de ban.", Type = "Warning" })
+    task.spawn(function()
+        local b0 = getBall()
+        if b0 then S._flingProps = b0.CustomPhysicalProperties end
+        while S.fling do
+            local ball = getBall()
+            if ball and ownerOf(ball) == LP then
+                pcall(function()
+                    ball.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+                    ball.Massless = true
+                end)
+                local bav = S._flingBAV
+                if not bav or bav.Parent ~= ball then
+                    if bav then pcall(function() bav:Destroy() end) end
+                    bav = Instance.new("BodyAngularVelocity")
+                    bav.Name = LP.Name
+                    bav.MaxTorque = Vector3.new(0, math.huge, 0)
+                    bav.P = math.huge
+                    bav.Parent = ball
+                    S._flingBAV = bav
+                end
+                bav.AngularVelocity = Vector3.new(0, 99999, 0)
+                task.wait(0.2)
+                if S._flingBAV then S._flingBAV.AngularVelocity = Vector3.new(0, 0, 0) end
+                task.wait(0.1)
+            else
+                task.wait(0.15)
+            end
+        end
+        flingCleanup(getBall())
+    end)
+end
+
+local function killAnticheat()
+    S.acPatched = 0
+    local hasGC = type(getgc) == "function"
+    local dbg = debug
+    local canUp = dbg and type(dbg.getupvalues) == "function" and type(dbg.setupvalue) == "function"
+    local canInf = dbg and type(dbg.getinfo) == "function"
+    if not (hasGC and canUp and canInf) then
+        return false, "executor sem getgc/debug.setupvalue"
+    end
+    local stub = (type(newcclosure) == "function") and newcclosure(function() return false end) or function() return false end
+    for _, f in ipairs(getgc(true)) do
+        if type(f) == "function" then
+            local ok, ups = pcall(dbg.getupvalues, f)
+            if ok and type(ups) == "table" then
+                for i, up in pairs(ups) do
+                    if type(up) == "function" then
+                        local okn, nm = pcall(function() return dbg.getinfo(up).name end)
+                        if okn and nm == "CheckBodyParts" then
+                            if pcall(dbg.setupvalue, f, i, stub) then S.acPatched += 1 end
+                        end
+                    end
+                end
+            end
+
+        end
+    end
+
+    for _, t in ipairs(getgc(true)) do
+        if type(t) == "table" and rawget(t, "GetUsing") and rawget(t, "ApplyForce") and rawget(t, "ResetWelds") then
+            pcall(function() t.GetUsing = function() return false end end)
+            S.acPatched += 1
+        end
+    end
+    return S.acPatched > 0, S.acPatched
+end
+
+local DEF = {
+    ["Head"]=Vector3.new(2,1,1), ["Torso"]=Vector3.new(2,2,1),
+    ["Right Arm"]=Vector3.new(1,2,1), ["Left Arm"]=Vector3.new(1,2,1),
+    ["Right Leg"]=Vector3.new(1,2,1), ["Left Leg"]=Vector3.new(1,2,1),
+}
+local function bodyWatchdog()
+    local c = LP.Character
+    if not c then return end
+    for name, sz in pairs(DEF) do
+        local p = c:FindFirstChild(name)
+        if p and p:IsA("BasePart") then
+            if p.Size ~= sz then pcall(function() p.Size = sz end) end
+            if p.Transparency ~= 0 then pcall(function() p.Transparency = 0 end) end
+        end
+    end
+end
+
+local function onStep(dt)
+    pcall(function()
+        local char, hrp, hum = getChar()
+        if not char then return end
+        local ball = getBall()
+        S._ball = ball
+        updateESP(ball)
+
+        if S.acOff then bodyWatchdog() end
+
+        if not ball then return end
+
+        if S.flyBall then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hum.WalkSpeed = 0
+            local cam = Workspace.CurrentCamera
+            if cam and cam.CameraSubject ~= ball then cam.CameraSubject = ball end
+
+            local owns = ownerOf(ball) == LP
+            local d3 = (ball.Position - hrp.Position).Magnitude
+
+            if not owns and d3 <= 12 and tick() - S._tGrab > 0.5 then
+                S._tGrab = tick(); grabBall(ball)
+            end
+
+            if owns then
+                S._flyLost = false
+                local look = cam and cam.CFrame.LookVector or Vector3.new(0, 0, -1)
+                local right = cam and cam.CFrame.RightVector or Vector3.new(1, 0, 0)
+                local f = (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
+                local r = (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
+                local u = (UIS:IsKeyDown(Enum.KeyCode.Space) and 1 or 0)
+                        - ((UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.LeftShift)) and 1 or 0)
+                local move = look * f + right * r + Vector3.new(0, u, 0)
+                local vel = (move.Magnitude > 0.05) and (move.Unit * S.flySpeed) or Vector3.zero
+                local bv = S._flyBV
+                if not bv or bv.Parent ~= ball then
+                    if bv then pcall(function() bv:Destroy() end) end
+                    bv = Instance.new("BodyVelocity")
+                    bv.Name = LP.Name; bv.MaxForce = Vector3.new(1, 1, 1) * 1e9; bv.Parent = ball
+                    S._flyBV = bv
+                end
+                bv.Velocity = vel
+            else
+
+                if S._flyBV then pcall(function() S._flyBV.Velocity = Vector3.zero end) end
+                if not S._flyLost then
+                    S._flyLost = true
+                    DeaDx:Notify({ Title = "Fly Ball", Content = "Sem posse da bola — chegue perto/pegue ela primeiro. O servidor não deixa roubar de longe.", Type = "Warning" })
+                end
+            end
+            return
+        end
+
+        local bpos = ball.Position
+        local hpos = hrp.Position
+        local dist3 = (bpos - hpos).Magnitude
+
+        local horiz = Vector3.new(bpos.X - hpos.X, 0, bpos.Z - hpos.Z)
+        local hd = horiz.Magnitude
+        local dir = (hd > 0.05) and (horiz / hd) or hrp.CFrame.LookVector
+
+        if S.autoBall then
+            if hd > S.stopDist and hd <= S.chaseLimit then
+                hum:MoveTo(Vector3.new(bpos.X, hpos.Y, bpos.Z))
+            elseif hd <= S.stopDist then
+                hum:MoveTo(hpos)
+            end
+
+            if S.autoBallMode == "Blatant" and dist3 <= 8 and ownerOf(ball) ~= LP then
+                if tick() - S._tGrab > 1 then S._tGrab = tick(); grabBall(ball) end
+            end
+        end
+
+        if S.autoGet and dist3 <= S.reachStud then
+            if tick() - S._tGrab > 0.12 then
+                S._tGrab = tick()
+                if ownerOf(ball) ~= LP then getBallNow(ball) end
+            end
+        end
+
+        if S.tpGrabAuto and not S._tpBusy and ownerOf(ball) ~= LP and tick() - S._tTp > 0.5 then
+            S._tTp = tick(); tpGrab()
+        end
+
+        if S.autoCatch and isGK() and dist3 <= S.gkReach then
+            local go = true
+            if S.catchMode == "Legit" then
+
+                local v = ball.AssemblyLinearVelocity
+                go = (v.Magnitude > 5) and ((bpos - hrp.Position).Unit:Dot(v.Unit) < -0.25)
+            end
+            if go and tick() - S._tCatch > 0.15 then
+                S._tCatch = tick()
+                gkCatch(ball)
+            end
+        end
+
+        if S.antiSteal and dist3 <= S.antiStealReach then
+            if ownerOf(ball) ~= LP then
+                if tick() - S._tAnti > 0.3 then S._tAnti = tick(); grabBall(ball) end
+            else
+
+                local target = hpos + hrp.CFrame.LookVector * 3 - Vector3.new(0, 1, 0)
+                local d = target - bpos
+                if d.Magnitude > 0.6 then pushBall(ball, d.Unit * math.min(d.Magnitude * 12, 300), 0.12) end
+            end
+        end
+
+        if S.magnet and dist3 <= S.magnetReach then
+            if ownerOf(ball) ~= LP and tick() - S._tGrab > 0.2 then
+                S._tGrab = tick(); grabBall(ball)
+            end
+            local target = hrp.Position + hrp.CFrame.LookVector * 3 - Vector3.new(0, 1, 0)
+            local d = target - bpos
+            if d.Magnitude > 0.5 then pushBall(ball, d.Unit * math.min(d.Magnitude * 10, 260), 0.1) end
+        end
+    end)
+
+end
+
+local function doKick()
+    local ball = getBall()
+    if not ball then return end
+    local cam = Workspace.CurrentCamera
+    local dir = cam and cam.CFrame.LookVector or Vector3.new(0, 0, -1)
+
+    if ownerOf(ball) ~= LP then grabBall(ball) end
+    local vel = dir * S.kickPower + Vector3.new(0, S.kickUp, 0)
+    pushBall(ball, vel, 0.4)
+    pcall(function() R.Client:FireServer("BallSound", ball) end)
+    pcall(function() R.React:FireServer(ball, Vector3.new(1,1,1)*1e9, vel) end)
+end
+
+local Window = DeaDx:CreateWindow({
+    Title = "Dead's Hub",
+    SubTitle = "Futebol Clássico",
+    Icon = "goal",
+    Size = UDim2.fromOffset(600, 460),
+    Theme = "DeaDx",
+    Acrylic = true,
+    Resize = true,
+    Search = true,
+    Footer = "by Dead",
+    MinimizeKey = Enum.KeyCode.RightControl,
+})
+
+local TBola = Window:AddTab({ Title = "Bola", Icon = "dribbble" })
+
+local sAuto = TBola:AddSection({ Title = "Auto Ball", Icon = "move" })
+sAuto:AddToggle("autoball", {
+    Title = "Auto Ball",
+    Description = "Anda até a bola (velocidade normal)",
+    Default = false,
+    Callback = function(v) setAutoBall(v) end,
+})
+sAuto:AddSegmented("autoballmode", {
+    Title = "Modo",
+    Values = { "Legit", "Blatant" },
+    Default = "Legit",
+    Icons = { Legit = "shield", Blatant = "flame" },
+    Callback = function(v) S.autoBallMode = v end,
+})
+sAuto:AddSlider("chaselimit", {
+    Title = "Limite de perseguição",
+    Min = 20, Max = 600, Default = 150, Increment = 10, Suffix = " st",
+    Callback = function(v) S.chaseLimit = v end,
+})
+sAuto:AddSlider("stopdist", {
+    Title = "Parar a",
+    Min = 3, Max = 20, Default = 5, Increment = 1, Suffix = " st",
+    Callback = function(v) S.stopDist = v end,
+})
+sAuto:AddParagraph({
+    Title = "Modos",
+    Content = "<b>Legit</b>: só anda. <b>Blatant</b>: anda + pega posse perto. Não bane.",
+})
+
+local sFly = TBola:AddSection({ Title = "Fly Ball", Icon = "plane" })
+sFly:AddToggle("flyball", {
+    Title = "Fly Ball",
+    Description = "Pilota a bola pela câmera (precisa de posse)",
+    Default = false,
+    Callback = function(v) setFly(v) end,
+})
+sFly:AddSlider("flyspeed", {
+    Title = "Velocidade do voo",
+    Min = 20, Max = 400, Default = 120, Increment = 10, Suffix = "",
+    Callback = function(v) S.flySpeed = v end,
+})
+sFly:AddKeybind("flykey", {
+    Title = "Tecla Fly Ball",
+    Default = Enum.KeyCode.K,
+    Mode = "Toggle",
+    Callback = function() setFly(not S.flyBall) end,
+})
+sFly:AddParagraph({
+    Title = "Controles",
+    Content = "<b>WASD</b> pela câmera • <b>Espaço/Ctrl</b> sobe/desce • precisa de posse.",
+})
+
+local sGet = TBola:AddSection({ Title = "Get Ball", Icon = "hand" })
+sGet:AddButton({
+    Title = "Get Ball",
+    Description = "Traz a bola pra você",
+    Callback = function() getBallNow() end,
+})
+sGet:AddKeybind("getballkey", {
+    Title = "Tecla Get Ball",
+    Description = "Traz a bola pra você",
+    Default = Enum.KeyCode.G,
+    Mode = "Toggle",
+    Callback = function() getBallNow() end,
+})
+sGet:AddToggle("autoget", {
+    Title = "Auto Get",
+    Description = "Pega a bola sozinho quando chega perto",
+    Default = false,
+    Callback = function(v) S.autoGet = v end,
+})
+sGet:AddSlider("reach", {
+    Title = "Alcance",
+    Min = 6, Max = 60, Default = 12, Increment = 1, Suffix = " st",
+    Callback = function(v) S.reachStud = v end,
+})
+sGet:AddButton({
+    Title = "Dropar bola",
+    Description = "Solta a bola",
+    Cooldown = 1,
+    Callback = function() pcall(function() R.DropBall:FireServer() end) end,
+})
+
+local sTp = TBola:AddSection({ Title = "Pegar por TP", Icon = "zap" })
+sTp:AddButton({
+    Title = "Pegar bola (TP)",
+    Description = "Pega a bola de longe num instante",
+    Callback = function() tpGrab() end,
+})
+sTp:AddKeybind("tpkey", {
+    Title = "Tecla",
+    Description = "Pega a bola de longe",
+    Default = Enum.KeyCode.J,
+    Mode = "Toggle",
+    Callback = function() tpGrab() end,
+})
+sTp:AddToggle("tpauto", {
+    Title = "Auto",
+    Description = "Fica pegando a bola sozinho",
+    Default = false,
+    Callback = function(v) S.tpGrabAuto = v end,
+})
+sTp:AddSlider("tphold", {
+    Title = "Velocidade",
+    Min = 3, Max = 20, Default = 6, Increment = 1, Suffix = "",
+    Callback = function(v) S.tpHold = v / 100 end,
+})
+sTp:AddParagraph({
+    Title = "⚠ Risco de ban",
+    Content = "Pega a bola de qualquer distância. Mais arriscado — use com cuidado.",
+})
+
+local TGK = Window:AddTab({ Title = "Goleiro", Icon = "shield-half" })
+
+local sCatch = TGK:AddSection({ Title = "Auto Catch", Icon = "hand-metal" })
+sCatch:AddToggle("autocatch", {
+    Title = "Auto Catch",
+    Description = "Defende a bola sozinho (só como goleiro)",
+    Default = false,
+    Callback = function(v) S.autoCatch = v end,
+})
+sCatch:AddSegmented("catchmode", {
+    Title = "Modo",
+    Values = { "Legit", "Blatant" },
+    Default = "Legit",
+    Icons = { Legit = "shield", Blatant = "flame" },
+    Callback = function(v) S.catchMode = v end,
+})
+sCatch:AddSlider("gkreach", {
+    Title = "Alcance",
+    Min = 8, Max = 50, Default = 16, Increment = 1, Suffix = " st",
+    Callback = function(v) S.gkReach = v end,
+})
+sCatch:AddButton({
+    Title = "Defender agora",
+    Callback = function() if isGK() then gkCatch(getBall()) else
+        DeaDx:Notify({ Title = "GK", Content = "Você não é o goleiro.", Type = "Warning" }) end end,
+})
+sCatch:AddParagraph({
+    Title = "Modos",
+    Content = "<b>Legit</b>: só quando a bola vem a gol. <b>Blatant</b>: sempre no alcance. Só como goleiro.",
+})
+
+local TBlat = Window:AddTab({ Title = "Blatant", Icon = "flame", IconColor = "#FF2D40" })
+
+local sKick = TBlat:AddSection({ Title = "Poder de Chute", Icon = "zap" })
+sKick:AddSlider("power", {
+    Title = "Força do chute",
+    Min = 50, Max = 800, Default = 180, Increment = 10, Suffix = "",
+    Callback = function(v) S.kickPower = v end,
+})
+sKick:AddSlider("kickup", {
+    Title = "Altura",
+    Min = 0, Max = 120, Default = 20, Increment = 5, Suffix = "",
+    Callback = function(v) S.kickUp = v end,
+})
+sKick:AddKeybind("kickkey", {
+    Title = "Tecla do chute",
+    Description = "Chuta pra onde você olha",
+    Default = Enum.KeyCode.F,
+    Mode = "Toggle",
+    Callback = function() doKick() end,
+})
+sKick:AddButton({
+    Title = "Chutar agora",
+    Callback = function() doKick() end,
+})
+
+local sMore = TBlat:AddSection({ Title = "Mais", Icon = "sparkles" })
+sMore:AddToggle("magnet", {
+    Title = "Ímã",
+    Description = "Mantém a bola grudada no seu pé",
+    Default = false,
+    Callback = function(v) S.magnet = v end,
+})
+sMore:AddSlider("magnetreach", {
+    Title = "Alcance do ímã",
+    Min = 6, Max = 40, Default = 10, Increment = 1, Suffix = " st",
+    Callback = function(v) S.magnetReach = v end,
+})
+sMore:AddToggle("antisteal", {
+    Title = "Anti-Steal",
+    Description = "Ninguém rouba a bola de você",
+    Default = false,
+    Callback = function(v) S.antiSteal = v end,
+})
+sMore:AddSlider("antistealreach", {
+    Title = "Alcance do Anti-Steal",
+    Min = 6, Max = 40, Default = 14, Increment = 1, Suffix = " st",
+    Callback = function(v) S.antiStealReach = v end,
+})
+sMore:AddToggle("fling", {
+    Title = "Fling Ball",
+    Description = "Joga longe quem encostar na bola",
+    Default = false,
+    Callback = function(v) setFling(v) end,
+})
+sMore:AddKeybind("flingkey", {
+    Title = "Tecla Fling Ball",
+    Default = Enum.KeyCode.H,
+    Mode = "Toggle",
+    Callback = function() setFling(not S.fling) end,
+})
+sMore:AddParagraph({
+    Title = "⚠ Risco de ban",
+    Content = "Tudo aqui é mais arriscado. Use em conta descartável.",
+})
+
+local TVis = Window:AddTab({ Title = "Visual", Icon = "eye" })
+local sEsp = TVis:AddSection({ Title = "ESP da Bola", Icon = "scan" })
+sEsp:AddToggle("espball", {
+    Title = "ESP Ball",
+    Description = "Marca a bola em vermelho com a distância",
+    Default = false,
+    Callback = function(v) S.espBall = v end,
+})
+
+local TCfg = Window:AddTab({ Title = "Config", Icon = "settings" })
+
+local sAC = TCfg:AddSection({ Title = "Anticheat", Icon = "shield-off" })
+sAC:AddToggle("acoff", {
+    Title = "Tirar Anticheat",
+    Description = "Desliga as travas do jogo no seu lado",
+    Default = false,
+    Callback = function(v)
+        S.acOff = v
+        if v then
+            local okc = killAnticheat()
+            DeaDx:Notify({
+                Title = "Anticheat",
+                Content = okc and "Desligado." or "Executor não suporta.",
+                Type = okc and "Success" or "Warning",
+            })
+        end
+    end,
+})
+
+local sInfo = TCfg:AddSection({ Title = "Hub", Icon = "info" })
+sInfo:AddParagraph({
+    Title = "Teclas",
+    Content = "<b>RightCtrl</b> minimiza • <b>G</b> get • <b>J</b> get por TP • <b>K</b> fly • <b>F</b> chute • <b>H</b> fling",
+})
+sInfo:AddButton({
+    Title = "Destruir hub",
+    Description = "Desliga tudo e fecha",
+    Callback = function() if S.unload then S.unload() end end,
+})
+
+S._conns[#S._conns+1] = RunService.Heartbeat:Connect(onStep)
+
+function S.unload()
+    if S.fling then S.fling = false; pcall(function() flingCleanup(getBall()) end) end
+    if S.flyBall then pcall(function() setFly(false) end) end
+    if S.autoBall then pcall(function() setAutoBall(false) end) end
+    for _, c in ipairs(S._conns) do pcall(function() c:Disconnect() end) end
+    S._conns = {}
+    S.autoBall, S.autoGet, S.autoCatch, S.magnet = false, false, false, false
+    S.antiSteal, S.flyBall, S.espBall, S.tpGrabAuto = false, false, false, false
+    if S._flyBV then pcall(function() S._flyBV:Destroy() end); S._flyBV = nil end
+    if S._espHL then pcall(function() S._espHL:Destroy() end); S._espHL = nil end
+    if S._espBB then pcall(function() S._espBB:Destroy() end); S._espBB = nil end
+    pcall(function() DeaDx:Unload() end)
+    pcall(function() Window:Destroy() end)
+    _G.DeadFC = nil
+end
+
+S._conns[#S._conns+1] = LP.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if S.acOff then pcall(killAnticheat) end
+end)
+
+DeaDx:Notify({
+    Title = "Dead's Hub • Futebol Clássico",
+    Content = "Carregado. Tudo começa OFF. RightControl pra minimizar.",
+    Type = "Success",
+})
