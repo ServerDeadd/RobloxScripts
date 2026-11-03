@@ -12,9 +12,25 @@ end
 
 local DeaDx = loadstring(game:HttpGet("https://raw.githubusercontent.com/ServerDeadd/DeaDx/main/DeaDx.lua"))()
 
-DeaDx:Notify({
+DeaDx:Ask({
     Title = "Unsupported Game",
-    Content = "This game is not supported.\nJoin our Discord: https://discord.gg/MKP5YHvgEN",
+    Content = "This game is not supported.\nWould you like to copy our Discord invite?",
     Type = "Warning",
-    Duration = 15,
+    Duration = 0,
+    Options = { "Copy", "Close" },
+    OnAnswer = function(answer)
+        if answer ~= "Copy" then return end
+
+        local copy = setclipboard or toclipboard
+        local copied = type(copy) == "function" and pcall(copy, "https://discord.gg/MKP5YHvgEN")
+
+        DeaDx:Notify({
+            Title = copied and "Copied" or "Discord",
+            Content = copied
+                and "Discord invite copied to your clipboard."
+                or "Could not copy automatically.\n" .. discord,
+            Type = copied and "Success" or "Warning",
+            Duration = 8,
+        })
+    end,
 })
