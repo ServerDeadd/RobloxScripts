@@ -1,7 +1,7 @@
-local id = game.PlaceId
+local id = game.GameId
 local script
 
-if id == 13664698400 then
+if id == 4743794878 then
     script = "https://raw.githubusercontent.com/ServerDeadd/RobloxScripts/refs/heads/main/TheClassicSoccer"
 end
 
