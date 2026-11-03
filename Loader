@@ -1,0 +1,20 @@
+local id = game.PlaceId
+local script
+
+if id == 13664698400 then
+    script = "https://raw.githubusercontent.com/ServerDeadd/RobloxScripts/refs/heads/main/TheClassicSoccer"
+end
+
+if script then
+    loadstring(game:HttpGet(script))()
+    return
+end
+
+local DeaDx = loadstring(game:HttpGet("https://raw.githubusercontent.com/ServerDeadd/DeaDx/main/DeaDx.lua"))()
+
+DeaDx:Notify({
+    Title = "Unsupported Game",
+    Content = "This game is not supported.\nJoin our Discord: https://discord.gg/MKP5YHvgEN",
+    Type = "Warning",
+    Duration = 15,
+})
